@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <title>Progress Note (SOAP) - Speech-to-Text & Image Modal</title>
+    <title>Progress Note (SOAP) - Global Dictate & Template</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     
     <link href="https://fonts.googleapis.com/css2?family=Sukhumvit+Set:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -33,14 +33,16 @@
             gap: 15px; 
         }
         .header h1 { margin: 0; font-size: 1.5em; color: #1e3a8a; }
-        .header .template-controls { display: flex; gap: 10px; align-items: center; }
-        .header input[type="text"] { 
+        .header .template-controls { display: flex; gap: 10px; align-items: center; margin-left: auto; }
+        
+        .header select { 
             padding: 8px 12px; 
             border: 1px solid #ccc; 
             border-radius: 6px; 
             font-family: 'Sukhumvit Set', sans-serif; 
+            background-color: white;
+            font-size: 0.95em;
         }
-
 
         .main-container {
             display: flex;
@@ -263,7 +265,7 @@
         }
         
         .speech-to-text-btn {
-            background-color: #fca5a5; /* Reddish color for mic */
+            background-color: #3b82f6; /* Global Dictate Color */
             color: white;
             padding: 5px 10px;
             border: none;
@@ -278,16 +280,16 @@
             flex-shrink: 0;
         }
         .speech-to-text-btn:hover {
-            background-color: #ef4444; 
+            background-color: #2563eb; 
         }
         .speech-to-text-btn.active {
-            background-color: #dc2626; /* Darker red when recording */
+            background-color: #1d4ed8; /* Darker blue when recording */
             animation: pulse 1.5s infinite;
         }
         @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
         }
         
         /* ==================================== */
@@ -406,8 +408,11 @@
             height: 100%; 
             overflow: auto; 
             background-color: rgba(0,0,0,0.9); 
+            justify-content: center; /* Center content */
+            align-items: center; /* Center content */
         }
-        .modal-content { 
+        /* Image Modal Specific Content */
+        #imageModal .modal-content { 
             margin: auto; 
             display: block; 
             width: 80%; 
@@ -416,6 +421,16 @@
             object-fit: contain; 
             margin-top: 50px; 
         }
+        /* Lab Modal Specific Content */
+        #labModal .modal-content {
+            background-color: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            max-width: 600px;
+            width: 90%; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
         .close-btn { 
             position: absolute; 
             top: 20px; 
@@ -424,6 +439,10 @@
             font-size: 40px; 
             font-weight: bold; 
             transition: 0.3s; 
+            z-index: 1001; /* Ensure close button is above image content */
+        }
+        #labModal .close-btn { 
+            color: #333; /* Dark color for lab modal close button */
         }
         .close-btn:hover, .close-btn:focus { 
             color: #bbb; 
@@ -471,22 +490,23 @@
         .button-group .save-btn { background-color: #3b82f6; color: white; }
         .button-group .cancel-btn { background-color: #f1f5f9; color: #4b5563; }
         
-        /* Lab Modal Specific Styles - Omitted for brevity, but kept in code */
-        /* ... */
-
     </style>
 </head>
 <body>
 
 <div class="header">
-    <h1>Progress Note</h1>
-    <div class="template-controls">
-        <select>
-            <option>Select template...</option>
+    <h1>Progress Note (SOAP)</h1>
+    
+    <button id="global-dictate-btn" class="speech-to-text-btn" onclick="startGlobalSpeechRecognition(this)"><i class="fa-solid fa-microphone"></i> Global Dictate</button>
+    
+    <div class="template-controls" style="margin-left: auto;">
+        <select id="template-select">
+            <option value="">Select template...</option>
         </select>
-        <button><i class="fa-solid fa-cloud-arrow-up"></i> Update Template</button>
+        <button onclick="loadTemplate()"><i class="fa-solid fa-download"></i> Load</button>
+        <button onclick="saveTemplate()"><i class="fa-solid fa-star"></i> Save as Favorite</button>
+        <button><i class="fa-solid fa-cloud-arrow-up"></i> Update Template</button> 
     </div>
-    <button class="speech-to-text-btn" id="global-dictate-btn" onclick="startSpeechRecognition(this)"><i class="fa-solid fa-microphone"></i> Global Dictate</button> 
 </div>
 
 <div class="main-container">
@@ -666,7 +686,7 @@
 </div>
 
 <div id="labModal" class="modal">
-    </div>
+</div>
 
 
 <script>
@@ -675,12 +695,11 @@
     const MAX_HEIGHT = 450;
     let activeDateFilter = null; 
     let activeDoctorFilter = null; 
-    // Global State
     let showImageOnly = false; 
     
     // Global state for Speech Recognition
     let recognition = null; 
-    let activeButton = null; 
+    let activeButton = null;
 
     // Mockup Data
     const mockVitalSign = `\n\n--- Last Vital Sign (27/11/2568 10:00) ---\nTemperature: 37.0 °C\nPulse: 75 /min (Regular)\nRespiratory Rate: 18 /min\nBlood Pressure: 120/80 mmHg\nSpO2: 98% (RA)\nPain Score: 0/10\n---------------------------------------------\n`;
@@ -692,261 +711,200 @@
         { name: "LFT", result: "AST 25, ALT 30, ALP 90, Total Bili 1.0.", abnormal: false, date: "2025-11-25" },
         { name: "Urine Analysis", result: "RBC 5-10/HPF (N <5), Protein trace.", abnormal: true, date: "2025-11-26" },
     ];
+    
+    // FIX 2: Template/Favorite Mock Data
+    const mockTemplates = [
+        { name: "Pneumonia Initial", s: "Fever, cough, SOB.", o: "Temp 38.5, CXR: infiltrate. Lab: WBC 10.5.", a: "Community Acquired Pneumonia.", p: "Start Ceftriaxone 1g IV OD. O2 support." },
+        { name: "Stable Follow-up", s: "Feeling better, no new complaints.", o: "Vitals stable, PE unremarkable.", a: "Stable, improving.", p: "Continue meds. Follow up in 1 week.", note: "Discussed care plan." }
+    ];
 
     /* ================================================= */
-    /* SPEECH-TO-TEXT FUNCTION (MODIFIED FOR GLOBAL & AI)*/
+    /* SPEECH-TO-TEXT FUNCTION (FIX 1: Global Dictate)   */
     /* ================================================= */
     
-    // Helper function to insert text into the correct element (CKEditor or Textarea)
-    function insertText(targetId, textToInsert) {
-        if (textToInsert.trim().length === 0) return;
-        
-        const targetElement = document.getElementById(targetId);
-        
-        // Use full stop for clean separation of spoken sentences/chunks
-        const textToInsertClean = textToInsert.trim().replace(/[,;:]$/, '') + '. '; 
-        
-        if (targetId === 'editor' && editorInstance) {
-            // Insert into CKEditor (A-Assessment)
-            editorInstance.model.change( writer => {
-                const textNode = writer.createText( textToInsertClean );
-                editorInstance.model.insertContent( textNode, editorInstance.model.document.selection.focus );
-            });
-            editorInstance.editing.view.focus();
-        } else if (targetElement) {
-            // Insert into Textarea (S, O, P, Note)
-            const isTextareaEmpty = targetElement.value.trim().length === 0;
-            // Add a space only if the box is not empty, to prevent double spacing after insertion
-            const prefix = isTextareaEmpty ? '' : ' '; 
-            targetElement.value += prefix + textToInsertClean.trim();
-            targetElement.scrollTop = targetElement.scrollHeight; 
-            targetElement.focus(); 
-        }
-    }
-
-    // NEW: Smart SOAP Distribution Logic
-    function distributeTranscript(transcript) {
-        
-        // 1. Define Keywords for SOAP categories (lowercased for case-insensitive matching)
-        const keywords = {
-            // Objective: Vitals, Measurements, Exams, Lab/Imaging results, Clear signs
-            O: [
-                'spo2', 'bp', 'pr', 'rr', 't', 'pulse', 'sat', 'ความดัน', 'อุณหภูมิ',
-                'วัดได้', 'ตรวจร่างกาย', 'physical exam', 'pe', 'lab', 'cxr', 'ct', 'mri', 'vitals',
-                'หายใจลำบาก', 'หอบ', 'ซีด', 'เหลือง', 'ฟังปอด', 'หน้าท้อง', 'gcs', 'ebm', 
-                'ตัวเลข', '\\d+ \\S{1,3}', // Matches numbers followed by 1-3 non-space chars (e.g., 39 องศา, 120/80, 94%)
-                'ผล' // E.g., ผล lab, ผล x-ray
-            ],
-            // Assessment: Diagnosis, Conclusion, Problem Summary, Status Change
-            A: [
-                'วินิจฉัย', 'ประเมินว่า', 'เนื่องจาก', 'สรุปได้ว่า', 'ปัญหาคือ', 'differential', 
-                'dx', 'r/o', 'เป็น', 'compatible with', 'stable', 'unstable', 'improved', 
-                'worsening', 'อาการคงที่', 'ดีขึ้น', 'แย่ลง', 'คาดว่า'
-            ],
-            // Plan: Treatment, Procedures, Medications, Follow-up, Education
-            P: [
-                'ให้ยา', 'สั่งยา', 'เริ่ม', 'หยุด', 'เปลี่ยนยา', 'นัด', 'ติดตาม', 'observe', 
-                'monitor', 'refer', 'ปรึกษา', 'ทำหัตถการ', 'plan', 'advice', 'แนะนำ', 'ส่งต่อ'
-            ],
-            // Note: Admin, communication, non-SOAP-specific information
-            Note: [
-                'คุยกับญาติ', 'แจ้งผู้ป่วย', 'รายงานแพทย์', 'ประชุมทีม', 'admin note', 'เอกสาร',
-                'ลงชื่อ', 'บันทึกเพิ่มเติม'
-            ],
-            // Subjective: Patient Complaint, Symptoms (Used as a tie-breaker if others are weak)
-            S: [
-                'บ่น', 'ปวด', 'เจ็บ', 'คัน', 'รู้สึก', 'เวียนหัว', 'คลื่นไส้', 'อาเจียน', 
-                'กินได้น้อย', 'นอนไม่หลับ', 'เหนื่อย', 'ไอ', 'แสบ', 'จุก'
-            ]
-        };
-        
-        // Combined text for each section
-        const sectionContent = {
-            subjective: '',
-            objective: '',
-            editor: '', // Assessment
-            plan: '',
-            note: ''
-        };
-        
-        // Regex to split transcript into sentence-like chunks
-        // Splits by '.', ',', ';', 'และ', 'แต่', or strong pauses, maintaining text.
-        const chunkDelimiter = /([\.\,\;]|\s+และ\s+|\s+แต่\s+)/g;
-        
-        // A more robust way to split the transcript, preserving delimiters for context.
-        const parts = transcript.split(/([,.;]|\s\s+)/g).filter(p => p.trim().length > 0);
-        
-        let currentChunk = '';
-        
-        // 2. Iterate through parts and categorize
-        parts.forEach(part => {
-            currentChunk += part.trim();
-
-            // Only analyze when a full stop or comma is encountered, or when the chunk is long
-            // Simplified rule: process when the chunk ends with a delimiter or is sufficiently long
-            const isDelimiter = part.match(/[,.;]|\s\s+/);
-            const isLongChunk = currentChunk.length > 50;
-
-            if (isDelimiter || isLongChunk || part === parts[parts.length - 1]) {
-                if (currentChunk.trim() === '') return;
-
-                const lowerCaseChunk = currentChunk.toLowerCase();
-                let bestMatch = 'S'; // Default to Subjective
-                let maxScore = 0;
-
-                // Score the chunk against all categories (O, A, P, Note first)
-                ['O', 'A', 'P', 'Note'].forEach(key => {
-                    let score = 0;
-                    keywords[key].forEach(keyword => {
-                        const regex = new RegExp(keyword, 'gi');
-                        const matches = lowerCaseChunk.match(regex);
-                        if (matches) {
-                            score += matches.length; 
-                            // Stronger match if the keyword is at the beginning
-                            if (lowerCaseChunk.startsWith(keyword)) {
-                                score += 2;
-                            }
-                        }
-                    });
-
-                    if (score > maxScore) {
-                        maxScore = score;
-                        bestMatch = key;
-                    }
-                });
-                
-                // If the score is low (e.g., 0-1) and Subjective keywords are present, prefer S.
-                if (maxScore <= 1) {
-                    let sScore = 0;
-                    keywords.S.forEach(keyword => {
-                        if (lowerCaseChunk.includes(keyword)) {
-                            sScore += 1;
-                        }
-                    });
-                    if (sScore > maxScore) {
-                        bestMatch = 'S';
-                    }
-                }
-                
-                // Map the best match key to the correct element ID
-                let targetId;
-                if (bestMatch === 'S') targetId = 'subjective';
-                else if (bestMatch === 'O') targetId = 'objective';
-                else if (bestMatch === 'A') targetId = 'editor';
-                else if (bestMatch === 'P') targetId = 'plan';
-                else if (bestMatch === 'Note') targetId = 'note';
-                
-                // Append the chunk to the correct section content
-                const sectionKey = (targetId === 'editor' ? 'editor' : targetId);
-                sectionContent[sectionKey] += currentChunk.trim() + ' '; 
-                
-                // Reset chunk for the next sentence
-                currentChunk = '';
-            }
-        });
-        
-        // 3. Final Insertion
-        insertText('subjective', sectionContent.subjective.trim());
-        insertText('objective', sectionContent.objective.trim());
-        insertText('editor', sectionContent.editor.trim()); // Assessment
-        insertText('plan', sectionContent.plan.trim());
-        insertText('note', sectionContent.note.trim());
-    }
-
-    function startSpeechRecognition(button) { 
-        
+    function startGlobalSpeechRecognition(button) {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             alert('ขออภัย! เบราว์เซอร์นี้ไม่รองรับ Speech-to-Text โปรดลองใช้ Google Chrome หรือ Microsoft Edge เวอร์ชันล่าสุด');
             return;
         }
 
         if (recognition && recognition.active) {
-            // Stop current recognition
             recognition.stop();
-            return;
+            return; 
         }
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
         
-        recognition.continuous = true; // Set to true to capture longer dictation flows
-        recognition.interimResults = true; 
+        recognition.continuous = true; 
+        recognition.interimResults = false; 
         recognition.lang = 'th-TH'; 
         recognition.active = true; 
 
         activeButton = button;
         
-        // Update button UI for listening state
         button.classList.add('active');
         button.innerHTML = '<i class="fa-solid fa-microphone-slash"></i> Listening...';
-
-        let finalTranscript = '';
+        
+        // Ensure the last modified element gets focus after transcription
+        let lastTargetId = 'subjective'; 
 
         recognition.onstart = function() {
             console.log('Global Speech recognition started.');
         };
-        
-        recognition.onresult = function(event) {
-            let interimTranscript = '';
-            let currentFinalTranscript = '';
 
+        recognition.onresult = function(event) {
+            let finalTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
-                    currentFinalTranscript += event.results[i][0].transcript;
-                } else {
-                    interimTranscript += event.results[i][0].transcript;
+                    finalTranscript += event.results[i][0].transcript;
                 }
             }
             
-            // Only process the final, non-interim part.
-            if (currentFinalTranscript) {
-                finalTranscript += currentFinalTranscript;
-                // Process the complete, finalized statement
-                distributeTranscript(currentFinalTranscript);
+            if (finalTranscript) {
+                lastTargetId = parseAndPopulateSoap(finalTranscript.trim());
             }
-
-            // Note: Interim transcript is ignored for insertion but can be used for display if needed.
         };
+
+        const resetDictationState = () => {
+             if (activeButton) {
+                activeButton.classList.remove('active');
+                activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Global Dictate';
+            }
+            if (recognition) {
+                 recognition.active = false;
+                 recognition = null;
+            }
+            // Focus on the last element written to
+            document.getElementById(lastTargetId).focus();
+            activeButton = null;
+        }
 
         recognition.onerror = function(event) {
             console.error('Speech recognition error:', event.error);
-            if (activeButton) {
-                activeButton.classList.remove('active');
-                activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Global Dictate';
-            }
-            recognition.active = false;
-            recognition = null;
-            activeButton = null;
+            resetDictationState();
         };
 
         recognition.onend = function() {
-            console.log('Speech recognition ended. Final Transcript:', finalTranscript);
-            
-            if (activeButton) {
-                activeButton.classList.remove('active');
-                activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Global Dictate';
-            }
-            recognition.active = false;
-            recognition = null;
-            activeButton = null;
+            console.log('Speech recognition ended.');
+            resetDictationState();
         };
         
         try {
             recognition.start();
         } catch (e) {
             console.error("Recognition already active or failed to start:", e);
-            if (activeButton) {
-                 activeButton.classList.remove('active');
-                 activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Global Dictate';
-            }
-            recognition.active = false;
-            recognition = null;
+            resetDictationState();
         }
+    }
+    
+    // FIX 1: Parsing logic for S:, O:, A:, P:
+    function parseAndPopulateSoap(transcript) {
+        const sections = ['S', 'O', 'A', 'P', 'Note'];
+        const map = { 
+            'S': 'subjective', 
+            'O': 'objective', 
+            'A': 'editor', 
+            'P': 'plan',
+            'Note': 'note' 
+        };
+        
+        // Regex to find prefixes: S:, O:, A:, P:, Note: (case-insensitive)
+        const regex = new RegExp(`(${sections.join('|')}):`, 'gi');
+        
+        // Split the transcript by the prefixes, keeping the prefixes in the result
+        let parts = transcript.split(regex).filter(part => part.trim() !== '');
+
+        let currentTargetId = 'subjective'; // Default target if no prefix is found first
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i].trim();
+            
+            // Check if this part is a prefix (S, O, A, P, Note)
+            const prefixMatch = sections.find(s => part.toUpperCase() === s.toUpperCase());
+            
+            if (prefixMatch) {
+                currentTargetId = map[prefixMatch];
+            } else {
+                // This part is the content for the currentTargetId
+                const content = part.trim() + ' ';
+                
+                if (currentTargetId === 'editor' && editorInstance) {
+                    editorInstance.model.change( writer => {
+                        const textNode = writer.createText( content );
+                        editorInstance.model.insertContent( textNode, editorInstance.model.document.selection.focus );
+                    });
+                } else {
+                    const targetElement = document.getElementById(currentTargetId);
+                    if (targetElement) {
+                        targetElement.value += content;
+                        targetElement.scrollTop = targetElement.scrollHeight; 
+                    }
+                }
+                // If content was inserted, the next part should ideally be a new prefix
+            }
+        }
+        
+        return currentTargetId; // Return the last modified element ID
     }
 
 
     /* ================================================= */
-    /* LAB & VITAL SIGN FUNCTIONS (Omitted for brevity)  */
+    /* TEMPLATE/FAVORITE FUNCTIONS (FIX 2: Favorite)     */
+    /* ================================================= */
+    
+    function populateTemplateSelect() {
+        const select = document.getElementById('template-select');
+        select.innerHTML = '<option value="">Select template...</option>';
+        mockTemplates.forEach((template, index) => {
+            select.innerHTML += `<option value="${index}">${template.name}</option>`;
+        });
+    }
+
+    function loadTemplate() {
+        const select = document.getElementById('template-select');
+        const index = select.value;
+        
+        if (index === "" || index === null) {
+            alert("Please select a template to load.");
+            return;
+        }
+        
+        const template = mockTemplates[parseInt(index)];
+        
+        document.getElementById('subjective').value = template.s || '';
+        document.getElementById('objective').value = template.o || '';
+        document.getElementById('plan').value = template.p || '';
+        
+        if (editorInstance) {
+            editorInstance.setData(template.a || '');
+        }
+        document.getElementById('note').value = template.note || ''; 
+
+        alert(`Template "${template.name}" loaded.`);
+    }
+
+    function saveTemplate() {
+        const templateName = prompt("Enter name for the new template/favorite:");
+        if (!templateName) return;
+
+        const newTemplate = {
+            name: templateName,
+            s: document.getElementById('subjective').value.trim(),
+            o: document.getElementById('objective').value.trim(),
+            a: editorInstance ? editorInstance.getData().trim() : document.getElementById('editor').value.trim(),
+            p: document.getElementById('plan').value.trim(),
+            note: document.getElementById('note').value.trim()
+        };
+        
+        mockTemplates.push(newTemplate);
+        populateTemplateSelect();
+        alert(`Template "${templateName}" saved as favorite.`);
+    }
+
+
+    /* ================================================= */
+    /* LAB & VITAL SIGN FUNCTIONS (Modal is confirmed)   */
     /* ================================================= */
 
     function insertVitalSign() {
@@ -958,27 +916,60 @@
         } else if (currentValue === '') {
             objectiveTextarea.value = mockVitalSign.trim(); 
         } else {
-            objectiveTextarea.value = mockVitalSign.trim() + '\n\n' + currentValue;
+            objectiveTextarea.value = currentValue + '\n\n' + mockVitalSign.trim();
         }
         objectiveTextarea.focus();
+        objectiveTextarea.scrollTop = objectiveTextarea.scrollHeight; 
     }
 
     function showLabModal() {
         const modal = document.getElementById('labModal');
-        const labList = document.getElementById('lab-list');
-        // Simplified: just show a mock alert for brevity, no full modal implementation here
-        alert("Showing mock Lab Modal: Labs available for 2025-11-27: Electrolytes, BUN/Cr. Labs available for 2025-11-26: CBC, Urine Analysis. Labs available for 2025-11-25: LFT.");
+        let modalContent = `
+            <div class="modal-content lab-modal-content">
+                <span class="close-btn" onclick="document.getElementById('labModal').style.display='none'">&times;</span>
+                <h2><i class="fa-solid fa-flask-vial"></i> Current Lab Results (Mock Data)</h2>
+                <p style="margin-top: -10px; margin-bottom: 10px; font-size: 0.9em; color: #4b5563;">Click on a lab result to insert into the Objective area.</p>
+                <div id="lab-list" style="max-height: 400px; overflow-y: auto;">
+        `;
+        
+        const sortedLabs = [...mockLabs].sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        sortedLabs.forEach(lab => {
+            const abnormalTag = lab.abnormal ? ' <span style="color:#ef4444; font-weight:600;">(ABNORMAL)</span>' : '';
+            const colorStyle = lab.abnormal ? 'style="border-left: 4px solid #ef4444; background-color: #fef2f2;"' : 'style="border-left: 4px solid #0d9488; background-color: #f0faf9;"';
+            const labText = `${lab.name}: ${lab.result} [Date: ${lab.date}]`;
+
+            modalContent += `
+                <div ${colorStyle} 
+                    style="padding: 10px; border-radius: 6px; margin-bottom: 8px; cursor: pointer; transition: background-color 0.2s, box-shadow 0.2s; font-size: 0.9em;"
+                    onclick="insertLabText('${labText.replace(/'/g, "\\'")}', this.closest('.modal'));">
+                    <i class="fa-solid fa-plus-circle" style="margin-right:8px; color:#10b981;"></i> 
+                    <strong>${lab.name} (${lab.date}):</strong> ${lab.result}${abnormalTag}
+                </div>
+            `;
+        });
+        
+        modalContent += `</div></div>`;
+        
+        modal.innerHTML = modalContent; 
+        modal.style.display = 'flex'; // Show modal
+    }
+
+    function insertLabText(text, modalElement) {
+        const objectiveTextarea = document.getElementById('objective');
+        objectiveTextarea.value += '\n\n' + text.trim();
+        objectiveTextarea.focus();
+        objectiveTextarea.scrollTop = objectiveTextarea.scrollHeight; 
+        if(modalElement) modalElement.style.display = 'none'; // Close the modal
     }
     
     /* ================================================= */
-    /* HISTORY & FILTERING FUNCTIONS */
+    /* HISTORY & FILTERING FUNCTIONS (Cleanup confirmed) */
     /* ================================================= */
     
     // Updated to handle JSON string stored in attribute
     const escapeForAttr = (content) => {
-        // Wrap content in an object and stringify to safely handle quotes
         const jsonString = JSON.stringify({value: content}); 
-        // Escape single quotes if they are still somehow present, though JSON.stringify helps
         return jsonString.replace(/'/g, "\\'"); 
     };
 
@@ -1003,71 +994,13 @@
         }
     }
     
-    function generateDateFilters() {
-        // Logic to generate date filters (omitted for brevity, assume initial ones are enough)
-    }
-
-    function generateDoctorFilters() {
-        // Logic to generate doctor filters (omitted for brevity, assume initial ones are enough)
-    }
-
-
-    function filterHistoryByDate(dateFilter, clickedButton) {
-        activeDateFilter = (dateFilter === 'all') ? null : dateFilter;
-        const dateButtons = document.querySelectorAll('.date-filter-bar button');
-
-        dateButtons.forEach(btn => btn.classList.remove('active'));
-        if (clickedButton) {
-            clickedButton.classList.add('active');
-        }
-
-        applyAllFiltersAndHighlight();
-    }
-    
-    function filterHistoryByDoctor(doctorName) {
-        activeDoctorFilter = (doctorName === 'all') ? null : doctorName;
-        document.getElementById('doctor-filter-select').value = doctorName; 
-        
-        applyAllFiltersAndHighlight();
-    }
-    
-    function storeOriginalContent() {
-        // Ensures data-original-text and data-original-html are set correctly
-        document.querySelectorAll('.note-record').forEach(record => {
-            record.querySelectorAll('.soap-history-item, .note-history-content').forEach(item => {
-                const isAssessment = item.getAttribute('data-section') === 'assessment';
-                
-                if (isAssessment) {
-                    // Use a more robust way to get/set value from the JSON string
-                    const dataHtmlAttr = item.getAttribute('data-html');
-                    if (dataHtmlAttr) {
-                        const originalHtml = JSON.parse(dataHtmlAttr).value;
-                        item.setAttribute('data-original-html', escapeForAttr(originalHtml.trim()));
-                    }
-
-                } else {
-                    const dataTextAttr = item.getAttribute('data-text');
-                     if (dataTextAttr) {
-                        const originalText = JSON.parse(dataTextAttr).value;
-                        item.setAttribute('data-original-text', escapeForAttr(originalText.trim()));
-                    }
-                }
-            });
-        });
-    }
-
-    // Function to ensure style and click handler are present on img tags in HTML
     const formatHistoryImageHtml = (html) => {
-        // 1. Add style for float (thumbnail appearance)
         let formattedHtml = html.replace(/<img /g, '<img style="float: left;" ');
-        // 2. Add ondblclick handler if it's not already present
         formattedHtml = formattedHtml.replace(/<img (?!.*ondblclick)/g, '$& ondblclick="handleHistoryImageClick(event)"');
         return formattedHtml;
     };
 
-    /**
-     * Toggles the showImageOnly filter state and re-applies all filters.
-     */
+
     function toggleImageOnlyFilter() {
         showImageOnly = document.getElementById('image-only-switch').checked;
         applyAllFiltersAndHighlight();
@@ -1081,29 +1014,31 @@
         
         // 1. Restore original content and reset classes
         historyRecords.forEach(record => {
-            record.classList.remove('hidden-by-date', 'hidden-by-doctor', 'hidden-by-filter', 'hidden-by-image'); // Reset image filter class
+            record.classList.remove('hidden-by-date', 'hidden-by-doctor', 'hidden-by-filter', 'hidden-by-image'); 
 
             record.querySelectorAll('.soap-history-item, .note-history-content').forEach(item => {
                 const isAssessment = item.getAttribute('data-section') === 'assessment';
                 
                 let originalContent;
+                
                 if (isAssessment) {
                     originalContent = JSON.parse(item.getAttribute('data-original-html') || '{"value":""}').value;
                     const sectionContentDiv = item.querySelector('.ck-content');
-                    const sectionSpan = item.querySelector('span'); // Fallback span for non-image A
+                    const sectionSpan = item.querySelector('span');
+                    
                     if (sectionContentDiv) {
                         sectionContentDiv.innerHTML = formatHistoryImageHtml(originalContent);
-                        // Hide span if ck-content is present and not empty
-                        if(sectionSpan) sectionSpan.style.display = 'none';
+                        if(sectionSpan) sectionSpan.style.display = 'none'; 
                     } else if (sectionSpan) {
-                         sectionSpan.textContent = originalContent.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim(); // Restore plain text
+                         const originalText = JSON.parse(item.getAttribute('data-original-text') || '{"value":""}').value;
+                         sectionSpan.textContent = originalText;
                          sectionSpan.style.display = 'inline';
                     }
                 } else {
                     originalContent = JSON.parse(item.getAttribute('data-original-text') || '{"value":""}').value;
                     const sectionSpan = item.querySelector('span');
                     if (sectionSpan) {
-                         sectionSpan.innerHTML = originalContent; // Restore text
+                         sectionSpan.innerHTML = originalContent; 
                     } 
                 }
             });
@@ -1126,12 +1061,11 @@
                 record.classList.add('hidden-by-doctor');
             }
             
-            // NEW: Apply Image Only Filter
+            // Apply Image Only Filter
             if (showImageOnly) {
                 const assessmentItem = record.querySelector('.soap-history-item[data-section="assessment"]');
                 let hasImage = false;
                 if (assessmentItem) {
-                    // Check original HTML attribute for <img> tag
                     const assessmentHtml = JSON.parse(assessmentItem.getAttribute('data-original-html') || '{"value":""}').value;
                     if (assessmentHtml && assessmentHtml.includes('<img')) {
                         hasImage = true;
@@ -1147,7 +1081,7 @@
             // Apply Search/Highlight Filter only if not hidden by other filters
             if (!record.classList.contains('hidden-by-date') && 
                 !record.classList.contains('hidden-by-doctor') &&
-                !record.classList.contains('hidden-by-image')) { // Added new filter check
+                !record.classList.contains('hidden-by-image')) {
                 
                 if (regex) {
                     record.querySelectorAll('.soap-history-item, .note-history-content').forEach(item => {
@@ -1159,20 +1093,15 @@
                         if (originalContent.match(regex)) {
                             matchFound = true;
                             
-                            // For assessment: HTML needs special handling
                             if (isAssessment) {
-                                // Highlighted HTML might lose the style/handler, so re-format it
                                 const highlightedHtml = originalContent.replace(regex, '<span class="highlight">$&</span>');
                                 const sectionContentDiv = item.querySelector('.ck-content');
-                                const sectionSpan = item.querySelector('span'); 
-
+                                
                                 if (sectionContentDiv) {
                                     sectionContentDiv.innerHTML = formatHistoryImageHtml(highlightedHtml);
-                                     if(sectionSpan) sectionSpan.style.display = 'none';
-                                } else if (sectionSpan) {
-                                    // Fallback span (for A without image/ckeditor structure)
-                                    sectionSpan.innerHTML = originalContent.replace(regex, '<span class="highlight">$&</span>');
-                                    sectionSpan.style.display = 'inline';
+                                } else {
+                                     const sectionSpan = item.querySelector('span'); 
+                                     if(sectionSpan) sectionSpan.innerHTML = originalContent.replace(regex, '<span class="highlight">$&</span>');
                                 }
                             } else {
                                 // For S, O, P, Note: Plain text highlighting
@@ -1193,20 +1122,31 @@
         });
     }
 
-    /* ================================================= */
-    /* NEW: Handle Image Double-Click (Double-click on IMG) */
-    /* ================================================= */
+    function filterHistoryByDate(dateFilter, clickedButton) {
+        activeDateFilter = (dateFilter === 'all') ? null : dateFilter;
+        const dateButtons = document.querySelectorAll('.date-filter-bar button');
+
+        dateButtons.forEach(btn => btn.classList.remove('active'));
+        if (clickedButton) {
+            clickedButton.classList.add('active');
+        }
+
+        applyAllFiltersAndHighlight();
+    }
+    
+    function filterHistoryByDoctor(doctorName) {
+        activeDoctorFilter = (doctorName === 'all') ? null : doctorName;
+        document.getElementById('doctor-filter-select').value = doctorName; 
+        
+        applyAllFiltersAndHighlight();
+    }
     
     function handleHistoryImageClick(event) {
-        // This function is now called directly from ondblclick on the <img> tag
+        event.stopPropagation(); 
+        
         const imgElement = event.target;
         
-        // Ensure it's an image element
         if (imgElement.tagName === 'IMG') {
-            // CRUCIAL FIX: Stop event propagation to prevent toggleTag from being called on the parent .note-record
-            event.stopPropagation(); 
-            
-            // Use data-original-src for the high-res image, fallback to src
             const fullSrc = imgElement.getAttribute('data-original-src') || imgElement.getAttribute('src'); 
 
             const modal = document.getElementById('imageModal');
@@ -1219,11 +1159,10 @@
 
 
     /* ================================================= */
-    /* CKEDITOR & FORM LOGIC (Omitted for brevity)       */
+    /* CKEDITOR & FORM LOGIC                             */
     /* ================================================= */
-
+    
     function resizeImage(file) {
-        // ... (resizeImage logic) ...
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = function(event) {
@@ -1244,7 +1183,6 @@
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height); 
 
-                    // Return a smaller thumbnail (e.g., 150x100 for history list)
                     const thumbnailCanvas = document.createElement('canvas');
                     thumbnailCanvas.width = 150;
                     thumbnailCanvas.height = 100;
@@ -1252,8 +1190,8 @@
                     thumbnailCtx.drawImage(img, 0, 0, 150, 100);
                     
                     resolve({
-                        default: canvas.toDataURL(file.type || 'image/png'), // This is for CKEditor (full size up to MAX)
-                        thumbnail: thumbnailCanvas.toDataURL(file.type || 'image/png') // Optional: For a true tiny thumbnail
+                        default: canvas.toDataURL(file.type || 'image/png'), 
+                        thumbnail: thumbnailCanvas.toDataURL(file.type || 'image/png')
                     });
                 };
                 img.onerror = function(e) {
@@ -1278,7 +1216,6 @@
                 .then( file => {
                     return resizeImage(file)
                         .then( result => {
-                            // This returns the MAX_WIDTH data URL to CKEditor
                             return { 
                                 default: result.default 
                             };
@@ -1290,7 +1227,6 @@
         }
 
         abort() {
-            // No action needed for this simple adapter
         }
     }
 
@@ -1326,14 +1262,12 @@
         } );
         
     function copyToForm(recordElement) {
-        // ... (copyToForm logic) ...
         const sections = ['subjective', 'objective', 'plan'];
         
         sections.forEach(section => {
             const historyItem = recordElement.querySelector(`.soap-history-item[data-section="${section}"]`);
             const formElement = document.getElementById(section);
             if (historyItem && formElement) {
-                // Parse JSON string
                 const dataText = JSON.parse(historyItem.getAttribute('data-text') || '{"value":""}').value; 
                 formElement.value = dataText.trim();
             }
@@ -1341,7 +1275,6 @@
 
         const assessmentItem = recordElement.querySelector('.soap-history-item[data-section="assessment"]');
         if (assessmentItem && editorInstance) {
-            // Parse JSON string
             const dataHtml = JSON.parse(assessmentItem.getAttribute('data-html') || '{"value":""}').value; 
             
             if (dataHtml) {
@@ -1355,7 +1288,6 @@
         const noteElement = document.getElementById('note');
         if (noteElement) {
              if (noteContent) {
-                // Parse JSON string
                 const dataText = JSON.parse(noteContent.getAttribute('data-text') || '{"value":""}').value; 
                 noteElement.value = dataText.trim(); 
             } else {
@@ -1385,7 +1317,6 @@
     }
     
     function processAndSaveNote() {
-        // Stop any active speech recognition before saving
         if (recognition && recognition.active) {
             recognition.stop();
         }
@@ -1396,12 +1327,11 @@
         const s = document.getElementById('subjective').value.trim() || "N/A";
         const o = document.getElementById('objective').value.trim() || "N/A";
         
-        let a = "N/A"; // Plain text summary
-        let aHtml = "N/A"; // Full HTML content
+        let a = "N/A"; 
+        let aHtml = "N/A"; 
 
         if (editorInstance) {
             aHtml = editorInstance.getData().trim();
-            // Create a plain text summary, replacing img tags with a placeholder
             a = aHtml.replace(/<img.*?alt="(.*?)".*?>/g, (match, alt) => `[Image: ${alt || 'Attachment'}]`)
                      .replace(/<[^>]*>?/gm, ' ') 
                      .replace(/\s+/g, ' ')
@@ -1420,7 +1350,6 @@
             day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
         }).replace(/(\d{4})/, '$1').replace(',', '');
         
-        // Use the improved escape function that stores value as JSON string
         const safeS = escapeForAttr(s);
         const safeO = escapeForAttr(o);
         const safeA = escapeForAttr(a);
@@ -1442,18 +1371,8 @@
         if (aHtml === "N/A" || aHtml === "") {
             assessmentContentHtml = `<span>N/A</span>`;
         } else {
-             // Modify image tag for thumbnail display in history: Add style (float) AND ondblclick handler
              const modifiedAHtml = aHtml.replace(/<img src="(.*?)"/g, (match, src) => {
-                // Determine full size source (if using placeholder logic for demo)
                 const fullSrc = src.replace(/640x450/g, '1280x900').replace(/150x100/g, '1280x900'); 
-                
-                // For a new save, we will try to extract a tiny thumbnail if the image tag is from CKEditor
-                // Since our resizeImage returns data for default (up to 640x450), 
-                // we'll use that as the thumbnail src for simplicity, and add the full source
-                // In a real app, you would generate a tiny 150x100 thumbnail URL here.
-                
-                // We assume the src already contains the correct size for the CKEditor area (up to MAX_WIDTH)
-                // To simulate the thumbnail effect in history, we will use a small placeholder size here:
                 const thumbSrc = src.replace(/640x450/g, '150x100').replace(/1280x900/g, '150x100'); 
 
                 return `<img src="${thumbSrc}" data-original-src="${fullSrc}" style="float: left;" ondblclick="handleHistoryImageClick(event)"`;
@@ -1462,9 +1381,6 @@
             assessmentContentHtml = `<div class="ck-content">${modifiedAHtml}</div>`;
         }
         
-        // Check if there is an image to determine which display type (ck-content or span) to show
-        const hasImage = aHtml.includes('<img');
-
         const newNoteHtml = `
             <div class="note-record" data-date="${currentDateISO}" data-full-date="${currentDateISO}T${String(currentDate.getHours()).padStart(2, '0')}${String(currentDate.getMinutes()).padStart(2, '0')}" style="border-left: 5px solid #10b981; background-color: #f0fdf4; box-shadow: 0 6px 16px rgba(16, 185, 129, 0.2);" ondblclick="toggleTag(this)">
                 <div class="note-record-header">
@@ -1483,7 +1399,7 @@
                     data-original-text='${safeA}' 
                     data-original-html='${safeAHtml}' >
                     <strong>A:</strong> 
-                    ${hasImage ? assessmentContentHtml : `<span>${a}</span>`}
+                    ${assessmentContentHtml}
                 </div>
                 
                 <div class="soap-history-item" data-section="plan" data-text='${safeP}' data-original-text='${safeP}'><strong>P:</strong> <span>${p}</span></div>
@@ -1503,16 +1419,11 @@
         
         document.querySelector('.soap-form-container').scrollTop = 0;
         
-        // Re-run setup functions for the new note
         calculateTotalDays();
-        storeOriginalContent(); 
-        generateDateFilters();
-        generateDoctorFilters(); 
         
-        // Reset search and filter to show the new note
         document.getElementById('diagnosis-search-input').value = '';
         document.getElementById('doctor-filter-select').value = 'all'; 
-        document.getElementById('image-only-switch').checked = false; // Uncheck the switch
+        document.getElementById('image-only-switch').checked = false; 
         showImageOnly = false;
         
         const allBtn = document.querySelector('.date-filter-bar button[data-date-filter="all"]');
@@ -1525,13 +1436,37 @@
         alert("บันทึก Progress Note เรียบร้อยแล้ว!");
     }
     
+    function storeOriginalContent() {
+        document.querySelectorAll('.note-record').forEach(record => {
+            record.querySelectorAll('.soap-history-item, .note-history-content').forEach(item => {
+                const isAssessment = item.getAttribute('data-section') === 'assessment';
+                
+                if (isAssessment) {
+                    const dataHtmlAttr = item.getAttribute('data-html');
+                    if (dataHtmlAttr) {
+                        const originalHtml = JSON.parse(dataHtmlAttr).value;
+                        item.setAttribute('data-original-html', escapeForAttr(originalHtml.trim()));
+                    }
+
+                } else {
+                    const dataTextAttr = item.getAttribute('data-text');
+                     if (dataTextAttr) {
+                        const originalText = JSON.parse(dataTextAttr).value;
+                        item.setAttribute('data-original-text', escapeForAttr(originalText.trim()));
+                    }
+                }
+            });
+        });
+    }
+
     // --- FINAL INITIALIZATION BLOCK ---
     document.addEventListener('DOMContentLoaded', () => {
         // 1. Initial setup
         calculateTotalDays();
         storeOriginalContent(); 
-        generateDateFilters(); 
-        generateDoctorFilters(); 
+        
+        // FIX 2: Populate template select on load
+        populateTemplateSelect(); 
         
         // 2. Event Listeners for Filters/Search 
         const searchInput = document.getElementById('diagnosis-search-input');
