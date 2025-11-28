@@ -486,6 +486,7 @@
         </select>
         <button><i class="fa-solid fa-cloud-arrow-up"></i> Update Template</button>
     </div>
+    <button class="speech-to-text-btn" id="global-dictate-btn" onclick="startSpeechRecognition(this)"><i class="fa-solid fa-microphone"></i> Global Dictate</button> 
 </div>
 
 <div class="main-container">
@@ -493,7 +494,7 @@
     <div class="soap-form-container">
         
         <div class="soap-section" id="subjective-area">
-            <label for="subjective">S (Subjective) <button class="speech-to-text-btn" onclick="startSpeechRecognition('subjective', this)"><i class="fa-solid fa-microphone"></i> Dictate</button></label>
+            <label for="subjective">S (Subjective)</label>
             <textarea id="subjective" placeholder="บันทึกอาการที่ผู้ป่วยบอก..."></textarea>
         </div>
 
@@ -501,7 +502,6 @@
             <label for="objective">
                 O (Objective)
                 <span class="button-group-inline">
-                    <button class="speech-to-text-btn" onclick="startSpeechRecognition('objective', this)"><i class="fa-solid fa-microphone"></i> Dictate</button>
                     <button class="last-vital-btn" onclick="insertVitalSign()"><i class="fa-solid fa-heart-pulse"></i> Last vital sign</button>
                     <button class="lab-btn" onclick="showLabModal()"><i class="fa-solid fa-flask-vial"></i> Lab</button>
                 </span>
@@ -513,7 +513,6 @@
             <label for="editor">
                 A (Assessment)
                  <span class="button-group-inline">
-                    <button class="speech-to-text-btn" onclick="startSpeechRecognition('editor', this)"><i class="fa-solid fa-microphone"></i> Dictate</button>
                     <button class="attach-btn" onclick="toggleAttachmentInput()"><i class="fa-solid fa-paperclip"></i> Attach Image</button>
                 </span>
             </label>
@@ -526,12 +525,12 @@
         </div>
 
         <div class="soap-section" id="plan-area">
-             <label for="plan">P (Plan) <button class="speech-to-text-btn" onclick="startSpeechRecognition('plan', this)"><i class="fa-solid fa-microphone"></i> Dictate</button></label>
+             <label for="plan">P (Plan)</label>
             <textarea id="plan" placeholder="บันทึกแผนการรักษา/ดูแล..."></textarea>
         </div>
         
         <div class="soap-section" id="note-area">
-             <label for="note">Note <button class="speech-to-text-btn" onclick="startSpeechRecognition('note', this)"><i class="fa-solid fa-microphone"></i> Dictate</button></label>
+             <label for="note">Note</label>
             <textarea id="note" placeholder="บันทึกข้อมูลเพิ่มเติมที่ไม่ใช่ SOAP..."></textarea>
         </div>
 
@@ -676,13 +675,12 @@
     const MAX_HEIGHT = 450;
     let activeDateFilter = null; 
     let activeDoctorFilter = null; 
-    // NEW Global State
+    // Global State
     let showImageOnly = false; 
     
     // Global state for Speech Recognition
     let recognition = null; 
-    let activeTargetId = null; 
-    let activeButton = null;
+    let activeButton = null; 
 
     // Mockup Data
     const mockVitalSign = `\n\n--- Last Vital Sign (27/11/2568 10:00) ---\nTemperature: 37.0 °C\nPulse: 75 /min (Regular)\nRespiratory Rate: 18 /min\nBlood Pressure: 120/80 mmHg\nSpO2: 98% (RA)\nPain Score: 0/10\n---------------------------------------------\n`;
@@ -696,91 +694,240 @@
     ];
 
     /* ================================================= */
-    /* SPEECH-TO-TEXT FUNCTION (Omitted for brevity)     */
+    /* SPEECH-TO-TEXT FUNCTION (MODIFIED FOR GLOBAL & AI)*/
     /* ================================================= */
     
-    function startSpeechRecognition(targetId, button) {
-        // ... (Speech recognition logic) ...
+    // Helper function to insert text into the correct element (CKEditor or Textarea)
+    function insertText(targetId, textToInsert) {
+        if (textToInsert.trim().length === 0) return;
+        
+        const targetElement = document.getElementById(targetId);
+        
+        // Use full stop for clean separation of spoken sentences/chunks
+        const textToInsertClean = textToInsert.trim().replace(/[,;:]$/, '') + '. '; 
+        
+        if (targetId === 'editor' && editorInstance) {
+            // Insert into CKEditor (A-Assessment)
+            editorInstance.model.change( writer => {
+                const textNode = writer.createText( textToInsertClean );
+                editorInstance.model.insertContent( textNode, editorInstance.model.document.selection.focus );
+            });
+            editorInstance.editing.view.focus();
+        } else if (targetElement) {
+            // Insert into Textarea (S, O, P, Note)
+            const isTextareaEmpty = targetElement.value.trim().length === 0;
+            // Add a space only if the box is not empty, to prevent double spacing after insertion
+            const prefix = isTextareaEmpty ? '' : ' '; 
+            targetElement.value += prefix + textToInsertClean.trim();
+            targetElement.scrollTop = targetElement.scrollHeight; 
+            targetElement.focus(); 
+        }
+    }
+
+    // NEW: Smart SOAP Distribution Logic
+    function distributeTranscript(transcript) {
+        
+        // 1. Define Keywords for SOAP categories (lowercased for case-insensitive matching)
+        const keywords = {
+            // Objective: Vitals, Measurements, Exams, Lab/Imaging results, Clear signs
+            O: [
+                'spo2', 'bp', 'pr', 'rr', 't', 'pulse', 'sat', 'ความดัน', 'อุณหภูมิ',
+                'วัดได้', 'ตรวจร่างกาย', 'physical exam', 'pe', 'lab', 'cxr', 'ct', 'mri', 'vitals',
+                'หายใจลำบาก', 'หอบ', 'ซีด', 'เหลือง', 'ฟังปอด', 'หน้าท้อง', 'gcs', 'ebm', 
+                'ตัวเลข', '\\d+ \\S{1,3}', // Matches numbers followed by 1-3 non-space chars (e.g., 39 องศา, 120/80, 94%)
+                'ผล' // E.g., ผล lab, ผล x-ray
+            ],
+            // Assessment: Diagnosis, Conclusion, Problem Summary, Status Change
+            A: [
+                'วินิจฉัย', 'ประเมินว่า', 'เนื่องจาก', 'สรุปได้ว่า', 'ปัญหาคือ', 'differential', 
+                'dx', 'r/o', 'เป็น', 'compatible with', 'stable', 'unstable', 'improved', 
+                'worsening', 'อาการคงที่', 'ดีขึ้น', 'แย่ลง', 'คาดว่า'
+            ],
+            // Plan: Treatment, Procedures, Medications, Follow-up, Education
+            P: [
+                'ให้ยา', 'สั่งยา', 'เริ่ม', 'หยุด', 'เปลี่ยนยา', 'นัด', 'ติดตาม', 'observe', 
+                'monitor', 'refer', 'ปรึกษา', 'ทำหัตถการ', 'plan', 'advice', 'แนะนำ', 'ส่งต่อ'
+            ],
+            // Note: Admin, communication, non-SOAP-specific information
+            Note: [
+                'คุยกับญาติ', 'แจ้งผู้ป่วย', 'รายงานแพทย์', 'ประชุมทีม', 'admin note', 'เอกสาร',
+                'ลงชื่อ', 'บันทึกเพิ่มเติม'
+            ],
+            // Subjective: Patient Complaint, Symptoms (Used as a tie-breaker if others are weak)
+            S: [
+                'บ่น', 'ปวด', 'เจ็บ', 'คัน', 'รู้สึก', 'เวียนหัว', 'คลื่นไส้', 'อาเจียน', 
+                'กินได้น้อย', 'นอนไม่หลับ', 'เหนื่อย', 'ไอ', 'แสบ', 'จุก'
+            ]
+        };
+        
+        // Combined text for each section
+        const sectionContent = {
+            subjective: '',
+            objective: '',
+            editor: '', // Assessment
+            plan: '',
+            note: ''
+        };
+        
+        // Regex to split transcript into sentence-like chunks
+        // Splits by '.', ',', ';', 'และ', 'แต่', or strong pauses, maintaining text.
+        const chunkDelimiter = /([\.\,\;]|\s+และ\s+|\s+แต่\s+)/g;
+        
+        // A more robust way to split the transcript, preserving delimiters for context.
+        const parts = transcript.split(/([,.;]|\s\s+)/g).filter(p => p.trim().length > 0);
+        
+        let currentChunk = '';
+        
+        // 2. Iterate through parts and categorize
+        parts.forEach(part => {
+            currentChunk += part.trim();
+
+            // Only analyze when a full stop or comma is encountered, or when the chunk is long
+            // Simplified rule: process when the chunk ends with a delimiter or is sufficiently long
+            const isDelimiter = part.match(/[,.;]|\s\s+/);
+            const isLongChunk = currentChunk.length > 50;
+
+            if (isDelimiter || isLongChunk || part === parts[parts.length - 1]) {
+                if (currentChunk.trim() === '') return;
+
+                const lowerCaseChunk = currentChunk.toLowerCase();
+                let bestMatch = 'S'; // Default to Subjective
+                let maxScore = 0;
+
+                // Score the chunk against all categories (O, A, P, Note first)
+                ['O', 'A', 'P', 'Note'].forEach(key => {
+                    let score = 0;
+                    keywords[key].forEach(keyword => {
+                        const regex = new RegExp(keyword, 'gi');
+                        const matches = lowerCaseChunk.match(regex);
+                        if (matches) {
+                            score += matches.length; 
+                            // Stronger match if the keyword is at the beginning
+                            if (lowerCaseChunk.startsWith(keyword)) {
+                                score += 2;
+                            }
+                        }
+                    });
+
+                    if (score > maxScore) {
+                        maxScore = score;
+                        bestMatch = key;
+                    }
+                });
+                
+                // If the score is low (e.g., 0-1) and Subjective keywords are present, prefer S.
+                if (maxScore <= 1) {
+                    let sScore = 0;
+                    keywords.S.forEach(keyword => {
+                        if (lowerCaseChunk.includes(keyword)) {
+                            sScore += 1;
+                        }
+                    });
+                    if (sScore > maxScore) {
+                        bestMatch = 'S';
+                    }
+                }
+                
+                // Map the best match key to the correct element ID
+                let targetId;
+                if (bestMatch === 'S') targetId = 'subjective';
+                else if (bestMatch === 'O') targetId = 'objective';
+                else if (bestMatch === 'A') targetId = 'editor';
+                else if (bestMatch === 'P') targetId = 'plan';
+                else if (bestMatch === 'Note') targetId = 'note';
+                
+                // Append the chunk to the correct section content
+                const sectionKey = (targetId === 'editor' ? 'editor' : targetId);
+                sectionContent[sectionKey] += currentChunk.trim() + ' '; 
+                
+                // Reset chunk for the next sentence
+                currentChunk = '';
+            }
+        });
+        
+        // 3. Final Insertion
+        insertText('subjective', sectionContent.subjective.trim());
+        insertText('objective', sectionContent.objective.trim());
+        insertText('editor', sectionContent.editor.trim()); // Assessment
+        insertText('plan', sectionContent.plan.trim());
+        insertText('note', sectionContent.note.trim());
+    }
+
+    function startSpeechRecognition(button) { 
+        
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             alert('ขออภัย! เบราว์เซอร์นี้ไม่รองรับ Speech-to-Text โปรดลองใช้ Google Chrome หรือ Microsoft Edge เวอร์ชันล่าสุด');
             return;
         }
 
         if (recognition && recognition.active) {
-            if (activeTargetId === targetId) {
-                recognition.stop();
-                return;
-            } else {
-                recognition.stop();
-            }
+            // Stop current recognition
+            recognition.stop();
+            return;
         }
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
         
-        recognition.continuous = true; 
-        recognition.interimResults = false; 
+        recognition.continuous = true; // Set to true to capture longer dictation flows
+        recognition.interimResults = true; 
         recognition.lang = 'th-TH'; 
         recognition.active = true; 
 
-        activeTargetId = targetId;
         activeButton = button;
         
+        // Update button UI for listening state
         button.classList.add('active');
         button.innerHTML = '<i class="fa-solid fa-microphone-slash"></i> Listening...';
 
-        const targetElement = document.getElementById(targetId);
+        let finalTranscript = '';
 
         recognition.onstart = function() {
-            console.log('Speech recognition started for:', targetId);
+            console.log('Global Speech recognition started.');
         };
-
+        
         recognition.onresult = function(event) {
-            let finalTranscript = '';
+            let interimTranscript = '';
+            let currentFinalTranscript = '';
+
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
+                    currentFinalTranscript += event.results[i][0].transcript;
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
                 }
             }
             
-            if (finalTranscript) {
-                let textToInsert = finalTranscript.trim() + ' ';
-                
-                if (targetId === 'editor' && editorInstance) {
-                    editorInstance.model.change( writer => {
-                        const textNode = writer.createText( textToInsert );
-                        editorInstance.model.insertContent( textNode, editorInstance.model.document.selection.focus );
-                    });
-                    editorInstance.editing.view.focus();
-                } else if (targetElement) {
-                    targetElement.value += textToInsert;
-                    targetElement.scrollTop = targetElement.scrollHeight; 
-                    targetElement.focus(); 
-                }
+            // Only process the final, non-interim part.
+            if (currentFinalTranscript) {
+                finalTranscript += currentFinalTranscript;
+                // Process the complete, finalized statement
+                distributeTranscript(currentFinalTranscript);
             }
+
+            // Note: Interim transcript is ignored for insertion but can be used for display if needed.
         };
 
         recognition.onerror = function(event) {
             console.error('Speech recognition error:', event.error);
             if (activeButton) {
                 activeButton.classList.remove('active');
-                activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Dictate';
+                activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Global Dictate';
             }
             recognition.active = false;
             recognition = null;
-            activeTargetId = null;
             activeButton = null;
         };
 
         recognition.onend = function() {
-            console.log('Speech recognition ended.');
+            console.log('Speech recognition ended. Final Transcript:', finalTranscript);
+            
             if (activeButton) {
                 activeButton.classList.remove('active');
-                activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Dictate';
+                activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Global Dictate';
             }
             recognition.active = false;
             recognition = null;
-            activeTargetId = null;
             activeButton = null;
         };
         
@@ -790,7 +937,7 @@
             console.error("Recognition already active or failed to start:", e);
             if (activeButton) {
                  activeButton.classList.remove('active');
-                 activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Dictate';
+                 activeButton.innerHTML = '<i class="fa-solid fa-microphone"></i> Global Dictate';
             }
             recognition.active = false;
             recognition = null;
@@ -919,7 +1066,7 @@
     };
 
     /**
-     * NEW: Toggles the showImageOnly filter state and re-applies all filters.
+     * Toggles the showImageOnly filter state and re-applies all filters.
      */
     function toggleImageOnlyFilter() {
         showImageOnly = document.getElementById('image-only-switch').checked;
